@@ -353,8 +353,8 @@ class Autorregressive_SwinLSTM(nn.Module):
         self.patch_embed_output = PatchEmbedding(output_channels, hidden_dim, patch_size)
 
         # ---- encoder ----
-        self.encoder_cell_1 = SwinLSTMCell(embed_dim, hidden_dim, num_heads, window_size, dropout)
-        self.encoder_cell_2 = SwinLSTMCell(embed_dim, hidden_dim, num_heads, window_size, dropout)
+        self.encoder_cell = SwinLSTMCell(embed_dim, hidden_dim, num_heads, window_size, dropout)
+        
 
 
         # ---- decoder (parâmetros próprios, não compartilha pesos com o encoder) ----
@@ -387,11 +387,9 @@ class Autorregressive_SwinLSTM(nn.Module):
         # ================= ENCODER =================
         for t in range(T):
             xt = self.patch_embed_input(x[:, t])
-            h, c = self.encoder_cell_1(xt, h, c)
+            h, c = self.encoder_cell(xt, h, c)
 
-        for t in range(T):
-            xt = self.patch_embed_input(x[:, t])
-            h, c = self.encoder_cell_2(xt, h, c)
+
         skip = h  # preserva o último hidden state do encoder para o U-Net skip
 
         # ================= DECODER AUTOREGRESSIVO =================
