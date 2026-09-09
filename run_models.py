@@ -42,8 +42,10 @@ def load_dataset(dataset):
 
 
 hs, hs_mean, hs_std    = load_dataset('dados_teste/hs.npy')
-u10, u10_mean, u10_std = load_dataset('dados_teste/u10.npy')
-v10, v10_mean, v10_std = load_dataset('dados_teste/v10.npy')
+
+### OLHAR DE NOVO ISSO AQUI
+u10, u10_mean, u10_std = load_dataset('dados_teste/hs.npy')
+v10, v10_mean, v10_std = load_dataset('dados_teste/hs.npy')
 
 print(f"Dataset shape : {hs.shape}")
 
@@ -217,10 +219,10 @@ for epoch in range(1, NUM_EPOCHS + 1):
 
     #ratio = max(0.0, 1.0 - epoch / NUM_EPOCHS)
     ratio = 0.0
-    train_loss = train_one_epoch(model, train_loader,device=device , optimiser, criterion, mask = train_ds.mask , ratio = ratio)
+    train_loss = train_one_epoch(model, train_loader,device , optimiser, criterion, mask = train_ds.mask , ratio = ratio)
     train_losses.append(train_loss)
 
-    val_loss = evaluate(model, val_loader, device=device , criterion, mask = train_ds.mask)
+    val_loss = evaluate(model, val_loader, device , criterion, mask = train_ds.mask)
     val_losses.append(val_loss)
 
 
@@ -229,7 +231,7 @@ for epoch in range(1, NUM_EPOCHS + 1):
 
 
 # Calculando Teste
-pred, real = teste(model, test_loader, train_ds.mask,device = 'device')
+pred, real = teste(model, test_loader, train_ds.mask,device = device)
 
 
 
