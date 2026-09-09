@@ -12,11 +12,13 @@ from modelos.modelo_SwinTranformer_encoder_autorregressivo import Autorregressiv
 torch.manual_seed(42)
 np.random.seed(42)
 
-H, W = 130, 130
+H, W = 128, 128
 PATCH_SIZE = 10
-T_in  = 5
-T_out = 5
-Chanels = 2
+T_in  = 1
+T_out = 2
+BATCH_SIZE = 2
+input_C  = 4
+output_C = 1
 
 def load_dataset(dataset):
 
@@ -30,8 +32,8 @@ def load_dataset(dataset):
 
 
 hs, hs_mean, hs_std    = load_dataset('dados_teste/hs.npy')
-u10, u10_mean, u10_std = load_dataset('dados_teste/u10.npy')
-v10, v10_mean, v10_std = load_dataset('dados_teste/v10.npy')
+#u10, u10_mean, u10_std = load_dataset('dados_teste/u10.npy')
+#v10, v10_mean, v10_std = load_dataset('dados_teste/v10.npy')
 
 print(f"Dataset shape : {hs.shape}")
 
@@ -43,27 +45,35 @@ print(f"Global std    : {np.nanstd(hs):.0f} meters")
 # Normalise
 
 hs_norm = (hs - hs_mean) / hs_std
-u10_norm = (u10 - u10_mean) / u10_std
-v10_norm = (v10 - u10_mean) / v10_std
+#u10_norm = (u10 - u10_mean) / u10_std
+#v10_norm = (v10 - u10_mean) / v10_std
 
 hs_norm  = np.expand_dims(hs_norm, axis=1)
-u10_norm = np.expand_dims(u10_norm, axis=1)
-v10_norm = np.expand_dims(v10_norm, axis=1)
+#u10_norm = np.expand_dims(u10_norm, axis=1)
+#v10_norm = np.expand_dims(v10_norm, axis=1)
 
-dataset =  np.concat([v10_norm,u10_norm,hs_norm,],axis = 1)
+#dataset =  np.concat([v10_norm,u10_norm,hs_norm,],axis = 1)
 
-n_train = int(0.8*u10.shape[0])
+dataset = np.concat([hs_norm,hs_norm,hs_norm],axis=1)
 
-
-train_ds = Wave_Dataset_NanMask(dataset[:n_train],input_timestep = T_in, output_timestep = T_out)
-val_ds   = Wave_Dataset_NanMask(dataset[n_train:],input_timestep = T_in, output_timestep = T_out)
-
+n_train = int(0.70*hs_norm.shape[0])
+n_val = int(n_train*0.10)
 
 
+# primeiro 70% dos dados
+train_ds  = Wave_Dataset_NanMask(dataset[:n_train],input_timestep = T_in, output_timestep = T_out)
+# validando com 10% dos dados
+val_ds    = Wave_Dataset_NanMask(dataset[n_train:n_train+n_val],input_timestep = T_in, output_timestep = T_out)
+
+# Testando com 20% dos dados
+test_ds   = Wave_Dataset_NanMask(dataset[n_train+n_val:],input_timestep = T_in, output_timestep = T_out)
+print('train size :', n_train )
+print('val size :', n_val )
 
 
-train_loader = DataLoader(train_ds,batch_size = 10, shuffle = True)
-val_loader = DataLoader(val_ds,batch_size = 10, shuffle = True)
+train_loader = DataLoader(train_ds,batch_size = BATCH_SIZE, shuffle = True)
+val_loader = DataLoader(val_ds,batch_size = BATCH_SIZE, shuffle = True)
+test_loader = DataLoader(test_ds,batch_size = BATCH_SIZE)
 
 
 encoder_batch, y = next(iter(train_loader))
@@ -79,7 +89,7 @@ def train_one_epoch(model, loader, optimiser,criterion ,mask = None ,ratio = 0.0
     for x_encoder, y in loader:
         optimiser.zero_grad()
         if mask is not None:
-            B,T,C,H,W = y.shape
+            B,T,C,H,W = x_encoder.shape
             mask_x = mask.to(x_encoder.device)
             mask_x = mask_x.unsqueeze(0).unsqueeze(0)
             mask_x = mask_x.expand(B, T, 1, H, W)
@@ -89,8 +99,6 @@ def train_one_epoch(model, loader, optimiser,criterion ,mask = None ,ratio = 0.0
         loss.backward()
         optimiser.step()
         total_loss += loss.item() * x_encoder.size(0)
-    import sys
-    sys.exit()
     return total_loss / len(loader.dataset)
 
 
@@ -100,7 +108,7 @@ def evaluate(model, loader, criterion ,mask = None, ratio = 0.0):
     with torch.no_grad():
         for x_encoder, y in loader:
             if mask is not None:
-                B,T,C,H,W = y.shape
+                B,T,C,H,W = x_encoder.shape
                 mask_x = mask.to(x_encoder.device)
                 mask_x = mask_x.unsqueeze(0).unsqueeze(0)
                 mask_x = mask_x.expand(B, T, 1, H, W)
@@ -112,7 +120,48 @@ def evaluate(model, loader, criterion ,mask = None, ratio = 0.0):
 
 
 
-NUM_EPOCHS = 5
+
+def teste(model, loader, mask=None, device="cuda"):
+
+    model.eval()
+
+    resultados = []
+    targets = []
+
+    with torch.no_grad():
+
+        for x, y in loader:
+
+            x = x.to(device)
+            y = y.to(device)
+            B,T,C,H,W = x.shape
+            # Adiciona máscara como canal
+            if mask is not None:
+
+                mask_x = mask.to(device)
+
+                # mask: [H, W]
+                # -> [1, 1, 1, H, W]
+                mask_x = mask_x.unsqueeze(0).unsqueeze(0).unsqueeze(0)
+
+                # Expande para [B, T, 1, H, W]
+                mask_x = mask_x.expand(B, T, 1, H, W )
+
+                x = torch.cat([x, mask_x], dim=2)
+
+            result = model(x)
+
+            resultados.append(result.cpu())
+            targets.append(y.cpu())
+
+    resultados = torch.cat(resultados, dim=0)
+    targets = torch.cat(targets, dim=0)
+
+    return resultados.numpy(), targets.numpy()      
+
+
+
+NUM_EPOCHS = 2
 LR = 1e-3
 
 
@@ -129,7 +178,7 @@ LR = 1e-3
 
 
 
-model = Autorregressive_SwinLSTM( input_channels=4, output_channels=1, future_steps = T_out, patch_size=4,
+model = Autorregressive_SwinLSTM( input_channels= input_C, output_channels= output_C, future_steps = T_out, patch_size=4,
         embed_dim=64,   hidden_dim=64, num_heads=4, window_size=4,  dropout=0.0,
 		teacher_forcing_ratio=0.0)
 
@@ -147,6 +196,8 @@ train_losses = []
 val_losses   = []
 
 
+###### TREINANDO O MODELO 
+
 for epoch in range(1, NUM_EPOCHS + 1):
 
     #ratio = max(0.0, 1.0 - epoch / NUM_EPOCHS)
@@ -157,6 +208,16 @@ for epoch in range(1, NUM_EPOCHS + 1):
     val_loss = evaluate(model, val_loader, criterion, mask = train_ds.mask)
     val_losses.append(val_loss)
 
+
     print(f"Epoch {epoch:2d}/{NUM_EPOCHS}  train={train_loss:.4f}  val={val_loss:.4f}")
+
+
+
+pred, real = teste(model, test_loader, train_ds.mask,device = 'cpu')
+
+#result = np.array(result).reshape(-1,T,output_C, H,W)
+
+###### avaliando conjunto de teste
+
 
 
